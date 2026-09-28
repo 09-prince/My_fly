@@ -1,0 +1,6 @@
+{
+  "w_scale": 0.0005,
+  "theta_gain": 0.3,
+  "dtheta_gain": 4.0,
+  "jump_rate": 0.5
+}

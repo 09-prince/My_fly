@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swat the Fly — Giant Fiber Escape Reflex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main class="app">
+
+  <div class="rig stage-rig">
+    <div class="bar">
+      <span class="name">The grass</span>
+      <span class="hint" id="hint">Drag to send a bird at it &mdash; several at once, or aim wide to miss</span>
+      <span class="spacer"></span>
+      <span>Escapes <b id="hud-escapes">0</b></span>
+      <span>Hits <b id="hud-hits">0</b></span>
+    </div>
+    <div class="stage">
+      <canvas id="arena"></canvas>
+
+      <aside class="side">
+        <div class="bar">
+          <span class="name">Giant Fiber</span>
+          <span class="spacer"></span>
+          <span class="sublabel">firing rate</span>
+        </div>
+        <canvas id="trace"></canvas>
+      </aside>
+    </div>
+
+    <div class="controls">
+      <button id="btn-pause" type="button" aria-pressed="false">Pause</button>
+      <button id="btn-replay" type="button">Replay &frac14;&times;</button>
+      <button id="btn-reset" type="button">Reset</button>
+
+      <label for="speed">Throw speed</label>
+      <input type="range" id="speed" min="2" max="14" step="1" value="6">
+      <output id="speed-out" for="speed">6</output>
+
+      <span class="keys">space pauses &middot; R replays</span>
+    </div>
+  </div>
+
+  <div class="rig brain-rig">
+    <div class="bar">
+      <span class="name">Connectome</span>
+      <span class="sublabel">all 437 neurons where they sit in the head &middot; all 12,897 connections</span>
+      <span class="spacer"></span>
+      <span class="legend">
+        <span><i class="dot" style="background:var(--lc4)"></i>LC4</span>
+        <span><i class="dot" style="background:var(--lplc2)"></i>LPLC2</span>
+        <span><i class="dot" style="background:var(--inter)"></i>interneuron</span>
+        <span><i class="dot" style="background:#ff2d6f"></i>DNp01_L</span>
+        <span><i class="dot" style="background:#b06bff"></i>DNp01_R</span>
+      </span>
+      <span><b id="hud-spikes">0</b> spiking</span>
+    </div>
+    <canvas id="brain"></canvas>
+  </div>
+
+  <div class="readouts">
+    <div class="cell">
+      <div class="k">&theta; left eye</div>
+      <div class="v" id="hud-tl">0.000</div>
+    </div>
+    <div class="cell">
+      <div class="k">&theta; right eye</div>
+      <div class="v" id="hud-tr">0.000</div>
+    </div>
+    <div class="cell">
+      <div class="k">neurons spiking</div>
+      <div class="v" id="hud-spikes-2">0</div>
+    </div>
+    <div class="cell">
+      <div class="k">fly</div>
+      <div class="v" id="hud-state">at rest</div>
+    </div>
+  </div>
+
+</main>
+
+<div class="wrap">
+
+  <div class="notes">
+
+    <section>
+      <h2>What decides the dodge</h2>
+      <p>LC4 and LPLC2 are looming detectors sitting deep in the fly's optic lobe. When something rushes at the fly they drive <strong>DNp01</strong> &mdash; the Giant Fiber, a pair of neurons so thick you can see them under a light microscope. DNp01 firing is what launches the escape.</p>
+      <p>A crow will not actually hunt a fruit fly. What eats them is jumping spiders, damselflies and frogs, and in the lab it is usually a looming dark disc on a screen. The circuit does not care which: it responds to anything that grows fast in the visual field, which is what all of them have in common.</p>
+      <p>The direct wiring gives each Giant Fiber one eye. DNp01_L receives <strong>6,418</strong> synapses from left-eye detectors and <strong>none</strong> from the right; DNp01_R receives <strong>4,780</strong> from the right and none from the left. No direct left-to-right connection survives the five-synapse cutoff used here, so which Giant Fiber fires says which side the threat came from.</p>
+      <p>The indirect wiring does cross, and it pulls the other way. Routed through the interneurons, right-eye input <em>excites</em> the left Giant Fiber while <em>inhibiting</em> the right one, and the mirror holds for the left eye. Turn the detector gain up and this crossed path wins: the fly reacts sooner but dodges toward the wrong side. The gain used here is the highest that still lets the direct input decide.</p>
+    </section>
+
+    <section>
+      <h2>Try a near miss</h2>
+      <p>Aim wide and the fly does not flinch. Nothing in the circuit measures distance &mdash; it responds to <strong>growth rate</strong>, and a bird passing to one side never grows fast enough to reach threshold. That is the looming model making a prediction you can falsify by hand.</p>
+      <p>Sending several at once is the only reliable way to win. Each eye responds to the strongest looming signal in view, so extra birds do not simply add up &mdash; but they do raise the total drive, and they take away the space the fly needs to land in. Surround it from three sides at full speed and it still fires in time, with nowhere left to go.</p>
+      <p>A slow throw still works, just later. The fly waits until the growth rate crosses threshold, which at low speed happens closer in.</p>
+    </section>
+
+    <section>
+      <h2>Honest limits</h2>
+      <p>The wiring, the synapse counts and the excitatory or inhibitory signs are real. The eyes are not: everything in front of LC4 and LPLC2 is replaced by the angular size each eye would see, which is the invented part of this model.</p>
+      <p>The direction of the dodge is this model's readout of which Giant Fiber won, not a claim about the fly. Real flies set escape direction with leg posture roughly 200&nbsp;ms before takeoff (Card &amp; Dickinson, 2008), which is not in this circuit.</p>
+    </section>
+
+  </div>
+
+  <footer>
+    FlyEM male CNS v1.0, min-confidence 0.5 &middot; 437 neurons, 12,897 connections &middot; neurotransmitter signs from the released per-body consensus predictions.
+  </footer>
+
+</div>
+
+<script src="circuit.js"></script>
+<script src="tuning.js"></script>
+<script src="scene.js"></script>
+<script src="trace.js"></script>
+<script src="brain.js"></script>
+<script src="vision.js"></script>
+<script src="fly.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

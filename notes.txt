@@ -1,0 +1,485 @@
+================================================================================
+SWAT THE FLY
+A real fruit fly's escape circuit, wired as measured, running in a browser
+================================================================================
+
+Last updated: 2026-09-25
+
+
+--------------------------------------------------------------------------------
+1. WHAT THIS IS, IN ONE PARAGRAPH
+--------------------------------------------------------------------------------
+
+437 neurons taken straight out of the Drosophila connectome, wired to each
+other exactly as they are in a real fly's brain, simulated as spiking cells,
+and hooked up to a game. You send a bird at the fly; the fly dodges. The
+decision to dodge -- whether, when, and which way -- is made by the neurons.
+Nothing is trained. Every connection strength was measured from an actual
+brain by electron microscopy, not learned or tuned.
+
+
+--------------------------------------------------------------------------------
+2. THE SHORT VERSION OF WHAT IS REAL
+--------------------------------------------------------------------------------
+
+REAL (from the connectome, untouched):
+  - which neuron connects to which
+  - how many synapses each connection has (12,897 connections)
+  - whether each neuron excites or inhibits
+  - the left/right organisation of the circuit
+
+INVENTED (my model, clearly the weak part):
+  - the eye. The circuit starts several layers deep in the optic lobe, so
+    everything in front of it is replaced by two numbers read off the screen.
+  - the body. Once the Giant Fiber fires, how far and how fast the fly moves
+    is arbitrary game physics.
+  - the direction of the dodge. The firing is the fly's; mapping which Giant
+    Fiber won onto "jump left / jump right" is my readout, not biology.
+  - five simulation constants (see section 7).
+
+NOT PRESENT AT ALL:
+  - learning of any kind. There is no training, no dataset split, no loss.
+
+
+--------------------------------------------------------------------------------
+3. THE BIOLOGY
+--------------------------------------------------------------------------------
+
+When something rushes at a fly, this is the pathway that makes it jump:
+
+    LC4 + LPLC2  ->  interneurons  ->  DNp01  ->  escape
+    (looming             (124)        (the Giant
+     detectors)                         Fiber)
+
+LC4 and LPLC2 are "lobula columnar" cells. They sit deep in the optic lobe
+and respond to looming -- an object expanding in the visual field. They are
+not general motion detectors and they do not measure distance.
+
+DNp01 is the Giant Fiber. It is a pair of descending neurons, one per side,
+thick enough to see under a light microscope, running from the brain down to
+the motor centres that drive the legs and wings. When DNp01 fires, the fly
+takes off. It is one of the most-studied neurons in insect neuroscience.
+
+This is the same decision a dinosaur in a jumping game has to make, which is
+why the first version of this project drove the Chrome T-Rex game with it.
+
+Honest note on predators: a crow will not hunt a fruit fly. Real predators
+are jumping spiders, damselflies and frogs, and in the lab the stimulus is
+usually a looming dark disc on a screen. The circuit does not care which --
+it responds to anything growing fast in the visual field.
+
+Honest note on escape direction: real flies set their escape direction with
+leg posture roughly 200 ms BEFORE takeoff (Card & Dickinson, Current Biology
+2008, "Visually mediated motor planning in the escape response of
+Drosophila"). That postural planning is not in this circuit. The direction
+shown here is derived from which Giant Fiber won, which is a modelling
+choice, not a claim about flies.
+
+
+--------------------------------------------------------------------------------
+4. THE DATA
+--------------------------------------------------------------------------------
+
+Source: FlyEM male CNS v1.0, minimum synapse confidence 0.5.
+Bucket: https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/
+        flat-connectome/
+
+Three files, all public, no API token needed:
+
+  connectome-weights-male-cns-v1.0-minconf-0.5.feather   1.0 GB
+      151,856,684 rows: body_pre, body_post, weight
+      Every synaptic connection in the male fly central nervous system.
+
+  body-annotations-male-cns-v1.0-minconf-0.5.feather     14 MB
+      211,577 rows: bodyId, instance, type, superclass, somaSide,
+      somaLocation, status, and ~30 more columns.
+
+  body-neurotransmitters-male-cns-v1.0.feather           43 MB
+      1,835,518 rows. The column that matters is consensus_nt.
+
+An earlier attempt used the neuPrint API with a personal token. That turned
+out to be unnecessary -- everything including the neurotransmitters is in
+these public files. The token is no longer used anywhere.
+
+These files live in data/ and are gitignored. `python fly_dataset.py`
+downloads whatever is missing.
+
+Coverage worth knowing about, measured on the annotation file:
+  status == "Traced"     165,122 of 211,577   (the rest are fragments, glia)
+  superclass filled       166,700  (78.8%)
+  type filled             164,506  (77.8%, 11,751 distinct types)
+  somaSide filled         150,726  (71.2%)
+  somaLocation filled     141,781
+  assignedOlHex1/2         23,720  -- retinotopic coordinates, but NOT for
+                                     LC4 or LPLC2 (0 of 311 have them)
+
+
+--------------------------------------------------------------------------------
+5. HOW THE CIRCUIT WAS EXTRACTED
+--------------------------------------------------------------------------------
+
+extract_circuit.py, roughly 3 minutes to run.
+
+Inputs:   every Traced LC4 and LPLC2          -> 311 neurons
+Output:   every Traced DNp01                  ->   2 neurons (10001, 10010)
+Between:  a neuron is kept if it receives >= 5 synapses from the inputs AND
+          sends >= 5 synapses to DNp01        -> 124 neurons
+
+Every edge of weight >= 5 among those 437 neurons is kept: 12,897 edges.
+
+The 152M-edge file is streamed batch by batch (2,318 Arrow record batches)
+and filtered with pyarrow.compute.is_in. It is never loaded into pandas as a
+whole -- that would need several GB of RAM.
+
+Result: circuit.json, 196 KB. Also exported as web/circuit.js with a
+`window.CIRCUIT =` prefix, because Chrome blocks fetch() from file:// and
+the page has to work by double-clicking index.html.
+
+Composition of the 437:
+    LPLC2   185     LC4   126     interneurons  124     DNp01  2
+
+Neurotransmitters (consensus_nt):
+    acetylcholine   386   -> excitatory
+    gaba             46   -> inhibitory
+    glutamate         5   -> inhibitory
+Sign convention: ACh +1, GABA and glutamate -1. This is the convention used
+by whole-brain fly models. Glutamate is the shakiest of the three; in flies
+it is usually inhibitory via GluCl, but not always.
+
+
+--------------------------------------------------------------------------------
+6. WHAT THE WIRING ACTUALLY SAYS
+--------------------------------------------------------------------------------
+
+These numbers were measured from the extracted circuit, not assumed. They
+are the most interesting part of the project.
+
+6a. DIRECT INPUT TO THE GIANT FIBERS IS STRICTLY ONE-EYED
+
+    DNp01_L  <- left-eye detectors    6,418 synapses
+             <- right-eye detectors       0
+    DNp01_R  <- right-eye detectors   4,780 synapses
+             <- left-eye detectors        0
+
+    No direct left-to-right connection survives the 5-synapse cutoff. So
+    which Giant Fiber fires already encodes which side the threat came from.
+
+6b. THE INDIRECT PATHS CROSS, AND PULL THE OTHER WAY
+
+    Routed through the interneurons (two-hop, signed weight products):
+
+    left eye  -> interneurons -> DNp01_L    -1,355,898   (inhibits)
+    left eye  -> interneurons -> DNp01_R      +444,086   (excites)
+    right eye -> interneurons -> DNp01_R      -660,950   (inhibits)
+    right eye -> interneurons -> DNp01_L      +935,948   (excites)
+
+    So each eye inhibits its own Giant Fiber and excites the opposite one,
+    through the interneurons. (The magnitudes are products of two weight
+    matrices, so they are not directly comparable to the one-hop numbers --
+    different units. Only the signs and the relative pattern matter.)
+
+    This has a very concrete consequence, seen repeatedly during
+    development: turn the detector gain up and the fly reacts sooner but
+    dodges toward the WRONG SIDE, because the crossed path reaches
+    threshold before the direct one does. Section 7 explains how the gain
+    was chosen because of this.
+
+6c. LC4 IS WEIGHTED ROUGHLY TWICE AS HEAVILY AS LPLC2
+
+    per-neuron signed weight onto DNp01:
+        LC4     25.25
+        LPLC2   13.07
+        interneurons  -1.54  (net inhibitory)
+
+    LC4 carries the growth-rate signal and LPLC2 the size signal. The
+    circuit weights growth rate about twice as heavily. This is not
+    something the model was built to produce -- and it predicted a result
+    (section 8a) before that result was measured.
+
+
+--------------------------------------------------------------------------------
+7. THE MODEL
+--------------------------------------------------------------------------------
+
+7a. THE EYE (invented -- web/vision.js)
+
+The circuit begins at LC4 and LPLC2, which are already several synapses deep
+in the optic lobe. Everything before them -- photoreceptors, lamina, medulla
+-- is not simulated. In its place:
+
+    theta     = 2 * atan(r / distance)      how big the object looks
+    dtheta/dt = rate of change of theta     how fast it is growing
+
+Azimuth decides which eye sees it. Fly eyes face sideways with a narrow
+frontal overlap, modelled as +/- 0.52 rad (about 30 degrees) either side of
+straight ahead; inside that band the object is shared between the eyes,
+outside it goes wholly to one.
+
+    theta      -> recruits LPLC2   (how big)
+    dtheta/dt  -> recruits LC4     (how fast)
+
+"Recruits" means: the stronger the signal, the more of that type fire, taken
+in a fixed seeded order. LC4 and LPLC2 have no retinotopic coordinates in
+this dataset, so there is no principled way to give each cell a patch of the
+visual field. Recruitment is the honest fallback -- and it looks right,
+since more dots light up as the threat closes.
+
+7b. THE NEURONS (real wiring -- web/fly.js)
+
+Leaky integrate-and-fire, one unit per neuron, one step per frame:
+
+    W[i][j]  = synapse_count * sign(i) * w_scale      (* inhibition if sign<0)
+
+    v  = v * tau + drive + (spikes . W)
+    spike where v >= threshold, then v = 0
+    v floored at -2
+
+    rate_L = rate_L * rate_tau + spike(DNp01_L) * (1 - rate_tau)
+    rate_R likewise
+
+    escape when max(rate_L, rate_R) >= jump_rate
+    direction from which of the two is higher
+
+The two Giant Fibers are read SEPARATELY. An earlier version averaged them,
+which capped the readout at 0.5 when only one side fired and made one-sided
+dodges impossible. That was a real bug.
+
+7c. THE CONSTANTS (web/tuning.js)
+
+    theta_gain     0.55    theta      -> fraction of LPLC2 recruited
+    dtheta_gain    6       dtheta/dt  -> fraction of LC4 recruited
+    drive          1.6     current delivered to a recruited neuron
+    tau            0.72    membrane leak per step
+    threshold      1.0     spike threshold
+    w_scale        0.0005  synapse count -> current
+    inhibition     2.6     extra strength for GABA/glutamate
+    jump_rate      0.08    DNp01 firing rate that triggers escape
+    rate_tau       0.55    smoothing on that rate
+    smooth         0.6     smoothing on dtheta/dt (columns are discrete)
+    escape_speed   28      takeoff speed in px/step  (arena only, not biology)
+
+w_scale is the one constant that was CALIBRATED rather than searched: it was
+derived from the measured per-neuron weight onto DNp01 so that threshold is
+crossed at roughly 25% recruitment. The first guess was 0.020, which is 28x
+too high -- the whole network saturated and the Giant Fiber fired constantly
+from the moment anything entered view. Working it out from the actual
+synapse counts is what made the model work at all.
+
+The other three (theta_gain, dtheta_gain, jump_rate) come from a grid search
+with four HARD constraints, all of which must hold:
+
+    1. never hit, at any throw speed or angle
+    2. the Giant Fiber matching the side the threat came from must be the
+       one that fires
+    3. no flinch when something passes wide
+    4. no firing at all when nothing is there
+
+Constraint 2 is what keeps the gain low. Higher gains give longer warning
+(98 px instead of 70 px) but flip the side, for the reason in section 6b.
+
+
+--------------------------------------------------------------------------------
+8. RESULTS
+--------------------------------------------------------------------------------
+
+8a. THE T-REX VERSION (the first build, still published)
+
+Driving the Chrome dinosaur game. Mean steps survived over 20 obstacle
+sequences the parameters were never fitted on. A run caps at 3000 steps, so
+3000 means it never crashed.
+
+    fly brain, theta + dtheta/dt      3000    20/20 solved
+    fly brain, dtheta/dt only         3000    20/20 solved
+    fly brain, theta only              373     0/20
+    random jumping                     159     0/20
+
+    Angular SIZE alone fails. GROWTH RATE alone is enough.
+
+That asymmetry was not designed in. It falls out of the wiring, where LC4 --
+the growth-rate channel -- carries roughly twice the synaptic weight onto
+DNp01 per neuron that LPLC2 does (section 6c). The measurement predicted the
+behaviour.
+
+8b. THE ARENA VERSION (current)
+
+    survived direct attacks     63/63    (7 speeds x 9 angles)
+    correct Giant Fiber fired    8/8
+    flinch at a near miss        0/15
+    false alarms while idle      0 in 900 steps
+    escape lead              70-140 px before contact
+
+    Several birds at once:
+        two from the same side      0/7 hit,  0/7 wrong side
+        five at once                0/7 hit
+        eight at once               0/7 hit
+        three converging, max speed 1/7 hit   <- the only way to win
+
+    Being hit by three birds converging from three sides at maximum speed is
+    not a detection failure: the Giant Fiber still fires in time. The fly
+    simply has nowhere left to land. That was left in rather than tuned away.
+
+8c. DRIFT (a bug found by the user, now guarded)
+
+Every escape moved the fly and nothing brought it back, so a sustained
+barrage walked it across the arena until it was pinned against an edge with
+no room to dodge. Measured over a 2400-step barrage, then letting it settle:
+
+    before   fly ends 782-933 px from its starting spot
+    after    fly ends     0-1 px from its starting spot
+    hits: 6 either way -- the fix makes it neither easier nor harder
+
+It now eases back at 0.045 per step. Faster returns (0.09, 0.22) nearly
+TRIPLED the hits, because the fly hurries back into birds still incoming.
+
+
+--------------------------------------------------------------------------------
+9. THE APP
+--------------------------------------------------------------------------------
+
+Open web/index.html in a browser. No server, no build step, no dependencies.
+
+    drag          send a bird -- several at once is allowed
+    space         pause
+    R             replay the last attack at quarter speed
+    Reset         clear the counts and put the fly back
+    slider        throw speed, 2 to 14 px/step
+
+Three panels, all on one screen:
+
+  THE GRASS      Top-down. The fly faces LEFT, so its left eye covers the
+                 lower half of the arena and its right eye the upper half.
+                 The two faint wedges are its visual fields; they brighten
+                 with how much that eye is seeing. The grass, soil and
+                 clover are scenery -- the fly is never shown them, only the
+                 birds.
+
+  GIANT FIBER    Vertical, on the right. Time runs top to bottom, firing
+                 rate across. The shaded band is everything past threshold;
+                 a line bulging into it IS the decision to jump.
+
+  CONNECTOME     All 437 neurons at their real soma positions, seen from
+                 the front, at true proportions -- the bilateral shape is
+                 the fly's own: two optic lobes flanking the central brain,
+                 with the pair of Giant Fibers between them. LPLC2 sits
+                 dorsolateral, LC4 below it, interneurons through the
+                 middle.
+
+                 All 12,897 connections are drawn. Dim ones are baked into
+                 a backdrop once; the ones carrying a spike this step are
+                 drawn live on top. A bird from the right sets the right
+                 optic lobe ablaze and leaves the left half dark -- that is
+                 the lateralisation of section 6a, visible as wiring inside
+                 a real head.
+
+                 x is MIRRORED, because left-side somata sit at higher x in
+                 the volume. Without the flip a threat on the fly's left
+                 would light the right of the picture.
+
+                 Either side: how many of each detector bank are firing,
+                 and that side's Giant Fiber.
+
+                 The soft glow is one blurred blob per soma. It is the real
+                 soma distribution, not an anatomical outline -- there is no
+                 brain mesh in this build.
+
+Replay re-runs the simulation from the same starting state rather than
+playing back recorded frames, so slow motion shows the real thing. It does
+not add to the escape/hit counts.
+
+
+--------------------------------------------------------------------------------
+10. FILES
+--------------------------------------------------------------------------------
+
+    fly_dataset.py        downloads and loads the two big raw files
+    extract_circuit.py    152M edges -> the 437-neuron circuit -> circuit.json
+    fly_brain.py          the LIF model in Python (T-Rex version)
+    trex_env.py           the Chrome dinosaur game as a gymnasium env
+    watch.py              watch the T-Rex env play, terminal or window
+    circuit.json          the extracted circuit
+    best_params.json      the T-Rex parameters
+
+    web/index.html        the page
+    web/style.css         all colours are variables in the :root block
+    web/circuit.js        circuit.json with a window.CIRCUIT = prefix
+    web/tuning.js         the constants, and why they are what they are
+    web/vision.js         theta and dtheta/dt per eye  (the invented front end)
+    web/fly.js            the LIF simulation of the connectome
+    web/scene.js          the grass, drawn once into an offscreen canvas
+    web/trace.js          the rolling Giant Fiber plot
+    web/brain.js          the circuit diagram
+    web/app.js            arena, throwing, controls, all three canvases
+
+Only vision.js, fly.js and tuning.js decide what the fly does. Everything
+else is rendering.
+
+    data/                 the raw connectome files (gitignored, ~1.1 GB)
+
+
+--------------------------------------------------------------------------------
+11. TESTS
+--------------------------------------------------------------------------------
+
+    cd web
+    node test_reflex.js          the reflex: hits, sides, near misses,
+                                 false alarms, multi-bird volleys
+    node test_reflex.js sides    per-angle side check
+    node drift.js                that the fly returns to its spot
+
+    python fly_brain.py          the T-Rex version, fly vs random vs scripted
+
+Everything is deterministic. The same seed gives the same run.
+
+Rule followed throughout: any change to rendering must leave test_reflex.js
+printing IDENTICAL numbers. If a number moves, behaviour was changed by
+accident.
+
+
+--------------------------------------------------------------------------------
+12. THINGS THAT WENT WRONG, AND WHAT THEY TAUGHT
+--------------------------------------------------------------------------------
+
+Kept because each one is a trap worth remembering.
+
+  fetch_adjacencies returns (neurons, connections), not the other way round.
+  The original scripts unpacked it backwards and saved neuron lists into
+  files named *_edges.csv. They contained no edges at all.
+
+  w_scale guessed at 0.020 was 28x too high. Guessing a scale for real
+  synapse counts does not work; derive it from the counts.
+
+  Averaging the two Giant Fibers capped the readout at 0.5 and made
+  one-sided dodges impossible.
+
+  The T-Rex physics was unwinnable at first: the dino cleared each obstacle
+  and then landed on its trailing edge, dying at step ~102 on every seed.
+  Airtime covered 7.15 units where 8.6 were needed.
+
+  Left-side somata sit at HIGHER x in the volume. A brain view that does not
+  mirror puts a left-eye response on the right of the screen.
+
+  Higher gain gives more warning and the wrong answer (section 6b). Any
+  change that raises the total drive -- bigger objects, more objects, higher
+  gain -- can flip the side. Always re-run the side check.
+
+  Plotting soma positions produces a cloud of dots that says nothing. Soma
+  position is where the cell body sits, not what it is wired to.
+
+
+--------------------------------------------------------------------------------
+13. WHAT WOULD MAKE THIS BETTER
+--------------------------------------------------------------------------------
+
+  - A real optic lobe. Include the medulla and lobula cells upstream of LC4
+    and LPLC2 and feed actual pixels in. This removes the invented front end,
+    which is the largest weakness by far.
+  - Reservoir readout: freeze the circuit, train one small classifier on the
+    descending-neuron activity. That would be an honest ML contribution --
+    "can this circuit linearly encode time-to-contact?"
+  - Evolution strategies on the readout instead of a grid search on five
+    constants.
+  - Check the extracted subgraph against the published escape-circuit
+    literature rather than trusting a 5-synapse cutoff.
+  - The glutamate sign assumption (5 neurons) deserves checking.
+
+================================================================================

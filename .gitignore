@@ -1,0 +1,7 @@
+# The dataset is large (~1 GB) and downloadable; keep it out of git.
+data/
+*.feather
+*.part
+
+__pycache__/
+*.pyc
